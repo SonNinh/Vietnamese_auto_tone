@@ -20,7 +20,7 @@ class MultiHeadAttention(torch.nn.Module):
 
         # STEP 1: calculate query, key and value
         # Visual explanation: images/calculate_Q_K_V.png
-        # query, key and value have the same dim of (batch, seq_len, attn_dim*n_head) 
+        # query, key and value have the same dim of (batch, seq_len, attn_dim*n_head)
         query = self.wQ(input_q)
         key = self.wK(input_k)
         value = self.wV(input_v)
@@ -54,13 +54,17 @@ class MultiHeadAttention(torch.nn.Module):
 
 
 class AddNorm(torch.nn.Module):
-    def __init__(self, dropout=0.1, input_dim=512):
+    def __init__(self, dropout=0.1, input_dim=512, training=False):
         super().__init__()
         self.dropout = torch.nn.Dropout(dropout)
         self.layer_norm = torch.nn.LayerNorm(input_dim, eps=1e-6)
+        self.training = training
     
     def forward(self, X, Y):
-        output = self.dropout(Y) + X
+        if self.training:
+            output = self.dropout(Y) + X
+        else:
+            output = Y + X
         output = self.layer_norm(output)
         return output
 
@@ -76,3 +80,7 @@ class FeedForward(torch.nn.Module):
         output = self.linear_2(output)
         return output
 
+
+if __name__ == "__main__":
+    layer = MultiHeadAttention().cuda()
+    print(layer.wQ.bias.device)
