@@ -1,72 +1,136 @@
-import torchtext
-import torch
-import dill as pickle
+from glob import glob
 
-from fairseq.data.encoders.fastbpe import fastBPE
-from fairseq.models.roberta import RobertaModel
-from transformer.DataLoader import MyDataLoader
-from torch.nn import Transfor
+import dill as pickle
+import torch
+import torchtext
+from torchtext.data import BucketIterator
+
+from nltk import ngrams
 __author__ = 'Son Ninh'
 
-class BPE():
-    bpe_codes = '/home/sonninh/PhoBert-Sentiment-Classification/PhoBERT_base_fairseq/bpe.codes'
+
+s1 = u'ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúýĂăĐđĨĩŨũƠơƯưẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ'
+s0 = u'AAAAEEEIIOOOOUUYaaaaeeeiioooouuyAaDdIiUuOoUuAaAaAaAaAaAaAaAaAaAaAaAaEeEeEeEeEeEeEeEeIiIiOoOoOoOoOoOoOoOoOoOoOoOoUuUuUuUuUuUuUuYyYyYyYy'
+def remove_accents(input_str):
+	s = ''
+	for c in input_str:
+		if c in s1:
+			s += s0[s1.index(c)]
+		else:
+			s += c
+	return s
+
+
+def cvt_accents(input_str):
+    map_encoded = []
+    str_acc = {'a':'a', 'á':'a1', 'à':'a2', 'ả':'a3', 'ã':'a4', 'ạ':'a5',
+            'o':'o', 'ó':'o1', 'ò':'o2', 'ỏ':'o3', 'õ':'o4', 'ọ':'o5',
+            'i':'i', 'í':'i1', 'ì':'i2', 'ỉ':'i3', 'ĩ':'i4', 'ị':'i5',
+            'y':'y', 'ý':'y1', 'ỳ':'y2', 'ỷ':'y3', 'ỹ':'y4', 'ỵ':'y5',
+            'u':'u', 'ú':'u1', 'ù':'u2', 'ủ':'u3', 'ũ':'u4', 'ụ':'u5',
+            'e':'e', 'é':'e1', 'è':'e2', 'ẻ':'e3', 'ẽ':'e4', 'ẹ':'e5',
+            'â':'a6', 'ấ':'a61', 'ầ':'a62', 'ẩ':'a63', 'ẫ':'a64', 'ậ':'a65',
+            'ă':'a8', 'ắ':'a81', 'ằ':'a82', 'ẳ':'a83', 'ẵ':'a84', 'ặ':'a85',
+            'ô':'o6', 'ố':'o61', 'ồ':'o62', 'ổ':'o63', 'ỗ':'o64', 'ộ':'o65',
+            'ơ':'o7', 'ớ':'o71', 'ờ':'o72', 'ở':'o73', 'ỡ':'o74', 'ợ':'o75',
+            'ư':'u7', 'ứ':'u71', 'ừ':'u72', 'ử':'u73', 'ữ':'u74', 'ự':'u75',
+            'ê':'e6', 'ế':'e61', 'ề':'e62', 'ể':'e63', 'ễ':'e64', 'ệ':'e65',
+            'đ':'d9',
+            '0':'))))))', '1':'!!!!!!', '2':'@@@@@@', '3':'######', '4':'$$$$$$',
+            '5':'%%%%%%', '6':'^^^^^^', '7':'&&&&&&', '8':'******', '9':'(((((('}
+
+    s = ''
+    for i, c in enumerate(input_str[::-1]):
+        if c in str_acc:
+            s += str_acc[c]
+            map_encoded += [i]*len(str_acc[c])
+        else:
+            s += c
+            map_encoded.append(i)
+    # print(s, map_encoded)
+    return s, map_encoded
+
+
+def tokenizer(text):
+    return [c for c in text.lower()]
+
 
 def main():
-    phoBERT = RobertaModel.from_pretrained('/home/sonninh/PhoBert-Sentiment-Classification/PhoBERT_base_fairseq', checkpoint_file='model.pt')
-    phoBERT.eval()  # disable dropout (or leave in train mode to finetune
-    
-    args = BPE()
-    phoBERT.bpe = fastBPE(args) #Incorporate the BPE encoder into PhoBERT
-
     SRC = torchtext.data.Field(
-        sequential=False,
-        use_vocab=False
+        sequential=True, use_vocab=True,
+        tokenize=tokenizer,
+        init_token='<init>', eos_token='<eos>'
     )
     TRG = torchtext.data.Field(
-        sequential=False,
-        use_vocab=False
+        sequential=True, use_vocab=True,
+        tokenize=tokenizer,
+        init_token='<init>', eos_token='<eos>'
     )
+
     fileds = [('src', SRC), ('trg', TRG)]
 
     datasets = {'val':None, 'train':None, 'test':None}
     for key in datasets.keys():
-        f = open(f'corpora/{key}_src_trg.csv', 'r')
-        row = f.readline()
         examples =[] 
-        n_sample = 20
-        while row and n_sample:
-            n_sample -= 1
-            src_name, trg_name = row.split(',')
-            src_name = phoBERT.encode(src_name)
-            trg_name = phoBERT.encode(trg_name)
-            ex = torchtext.data.Example.fromlist([src_name, trg_name], fileds)
-            examples.append(ex)
-            row = f.readline()
-        f.close()
+        root_dir = f'/mnt/data/sonninh/vietnamese_tone/pre_processed/{key}/*'
+        for file_pth in glob(root_dir):
+            print(file_pth)
+            f = open(file_pth, 'r')
+            row = f.readline().strip('\n')
+            
+            while row:
+                if len(row) < 61: 
+                    src_name = remove_accents(row)
+                    trg_name = row
+                    ex = torchtext.data.Example.fromlist([src_name, trg_name], fileds)
+                    examples.append(ex)
+                else:
+                    break
+                row = f.readline().strip('\n')
+            f.close()
+            break
+
         datasets[key] = torchtext.data.Dataset(examples, fileds)
 
+    SRC.build_vocab(datasets['train'].src)
+    TRG.build_vocab(datasets['train'].trg)
+    
+    print(SRC.vocab.stoi)
+    print()
+    print(TRG.vocab.stoi)
+    print()
+    print(len(SRC.vocab))
+    print(len(TRG.vocab))
+
+    # batch_src = []
+    # batch_trg = []
+    # for pair in datasets['train'].examples[:4]:
+    #     batch_src.append(pair.src)
+    #     batch_trg.append(pair.trg)
+    # print(SRC.process(batch_src))
+
+    # for i, batch in enumerate(BucketIterator(datasets['val'], 4)):
+    #     print(batch.src)
+    #     print(batch.trg)
+    #     break
     data = {
         'fields': {'src': SRC, 'trg': TRG},
         'train': datasets['train'].examples,
         'valid': datasets['val'].examples,
         'test': datasets['test'].examples
     }
-    pickle.dump(data, open('corpora/vietnamese_mini.pkl', 'wb'))
+    pickle.dump(data, open('/mnt/data/sonninh/vietnamese_tone/pre_processed/mini_vietnamese.pkl', 'wb'))
 
-    # train_iter = MyDataLoader(train, 4)
+    # for ex in datasets['train'].examples:
+    #     print(ex)
+
+    # train_iter = MyDataLoader(datasets['train'], 4)
 
     # for batch in train_iter:
     #     print(batch.src)
     #     print(batch.trg)
+    #     break
 
 
 if __name__ == "__main__":
     main()
-
-'''
-end_day: done data_loader
-
-TO-DO:
-- create fake data
-- train model
-'''
