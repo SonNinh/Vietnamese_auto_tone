@@ -1,6 +1,8 @@
 import argparse
-from os import path
 import os
+from collections import OrderedDict
+from os import path
+
 import dill as pickle
 import torch
 import torch.nn.functional as F
@@ -8,8 +10,33 @@ import torchtext
 from torch import optim
 from torchtext.data import BucketIterator
 from tqdm import tqdm
-from Transformer.Models import Transformer
-from collections import OrderedDict
+
+from Transformer.Models import Encoder, get_pad_mask
+
+
+class TransformerEnc(torch.nn.Module):
+    def __init__(self,
+    n_vocab_in=100, n_vocab_out=100, emb_dim=512, pad_idx=1,
+    max_seq_len=12, dropout=0.0, n_block=3,
+    attn_dim=64, n_head=8, feedforward_dim=1024, training=False):
+        super().__init__()
+        self.pad_idx = pad_idx
+    
+        self.encoder = Encoder(
+            n_vocab_in, emb_dim, pad_idx, max_seq_len,
+            dropout, n_block, attn_dim, n_head, feedforward_dim, training=training
+        )
+        self.proj_out = torch.nn.Linear(emb_dim, n_vocab_out)
+    
+    def forward(self, src_seq):
+        src_mask = get_pad_mask(src_seq, self.pad_idx)
+        
+        enc_output = self.encoder(src_seq, src_mask)
+        output = self.proj_out(enc_output)
+
+        return output
+        
+
 
 def cal_performance(pred, gold, pad_idx, n_vocab_out, smoothing=False):
     ''' Apply label smoothing if needed '''
@@ -58,8 +85,7 @@ def patch_src(src):
 
 def patch_trg(trg):
     trg = trg.transpose(0, 1)
-    trg, gold = trg[:, :-1], trg[:, 1:].contiguous().view(-1)
-    return trg, gold
+    return trg
 
 
 def train_on_epoch(model, optimizer, train_loader, opt, device):
@@ -74,14 +100,11 @@ def train_on_epoch(model, optimizer, train_loader, opt, device):
     for batch in tqdm_bar:
         n_batch += 1
         src_seq = patch_src(batch.src).to(device)
-        trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch.trg))
+        trg_seq = patch_trg(batch.trg).to(device)
         
         model.zero_grad()
-        if opt.teacher >= 2:
-            pre = model(src_seq, trg_seq, teacher=n_batch%2)
-        else:
-            pre = model(src_seq, trg_seq, teacher=opt.teacher)
-        loss, n_correct, n_word = cal_performance(pre, gold, opt.pad_idx, opt.n_vocab_out)
+        pre = model(src_seq)
+        loss, n_correct, n_word = cal_performance(pre, trg_seq, opt.pad_idx, opt.n_vocab_out)
         train_loss_total += loss.item()
         n_correct_total += n_correct
         n_word_total += n_word
@@ -89,11 +112,6 @@ def train_on_epoch(model, optimizer, train_loader, opt, device):
         loss.backward()
         optimizer.step()
 
-        # print(loss.item())
-        # print(n_correct, n_word)
-        # print(pre.size(), trg_seq)
-        
-        # input()
 
     return train_loss_total/(n_batch), n_correct_total/n_word_total
 
@@ -109,12 +127,10 @@ def val_on_epoch(model, val_loader, opt, device):
         for batch in tqdm(val_loader, mininterval=2, desc=desc):
             n_batch += 1
             src_seq = patch_src(batch.src).to(device)
-            trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch.trg))
-            if opt.teacher >= 2:
-                    pre = model(src_seq, trg_seq, teacher=n_batch%2)
-            else:
-                pre = model(src_seq, trg_seq, teacher=opt.teacher)
-            loss, n_correct, n_word = cal_performance(pre, gold, opt.pad_idx, opt.n_vocab_out)
+            trg_seq = patch_trg(batch.trg).to(device)
+        
+            pre = model(src_seq)
+            loss, n_correct, n_word = cal_performance(pre, trg_seq, opt.pad_idx, opt.n_vocab_out)
             val_loss_total += loss.item()
             n_correct_total += n_correct
             n_word_total += n_word
@@ -154,18 +170,21 @@ def copyStateDict(state_dict):
             new_state_dict[name] = v
         return new_state_dict
 
-def main(opt):
 
+def main(opt):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # device = torch.device('cpu')
     train_loader, val_loader = load_data(opt, device)
 
-    model = Transformer(
+    model = TransformerEnc(
         n_vocab_in=opt.n_vocab_in, n_vocab_out=opt.n_vocab_out,
         emb_dim=opt.emb_dim, pad_idx=opt.pad_idx,
         max_seq_len=opt.max_seq_len, dropout=opt.dropout,
-        n_block=opt.n_block, attn_dim=opt.attn_dim, n_head=opt.n_head, training=True
+        n_block=opt.n_block, attn_dim=opt.attn_dim,
+        feedforward_dim=opt.feedforward_dim ,
+        n_head=opt.n_head, training=True
     )
+
 
     if opt.FT:
         print('Fine tune!')
@@ -215,7 +234,6 @@ def main(opt):
             print(f'\t- [Info] The checkpoint file has been updated at epoch: {i}, with val_loss: {val_loss:.4f}')
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -229,6 +247,7 @@ if __name__ == "__main__":
     parser.add_argument('-resume_from', type=str, default='')
 
     parser.add_argument('-emb_dim', type=int, default=512)
+    parser.add_argument('-feedforward_dim', type=int, default=1024)
     parser.add_argument('-n_vocab_in', type=int, default=100)
     parser.add_argument('-n_vocab_out', type=int, default=100)
     parser.add_argument('-max_seq_len', type=int, default=64)
@@ -237,7 +256,6 @@ if __name__ == "__main__":
     parser.add_argument('-attn_dim', type=int, default=64)
     parser.add_argument('-n_head', type=int, default=8)
 
-    parser.add_argument('-teacher', type=int, default=1)
     parser.add_argument('-lr', type=float, default=0.0001)
     
     opt = parser.parse_args()
