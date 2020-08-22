@@ -71,20 +71,21 @@ def cal_loss(pred, gold, pad_idx, n_vocab_out, smoothing=False):
         loss = -(one_hot * log_prb).sum(dim=1)
         loss = loss.masked_select(non_pad_mask).sum()  # average later
     else:
-        pred_flat = pred.view(-1, n_vocab_out)
-        gold_flat = gold.view(-1)
         # print(pred.size())
         # print(gold.size())
+        pred_flat = pred.view(-1, n_vocab_out)
+        gold_flat = gold.view(-1)
+        
         loss = F.cross_entropy(pred_flat, gold_flat, ignore_index=pad_idx, reduction='sum')
     return loss
 
 
 def patch_src(src):
-    src = src.transpose(0, 1)
+    src = src.transpose(0, 1).contiguous()
     return src
 
 def patch_trg(trg):
-    trg = trg.transpose(0, 1)
+    trg = trg.transpose(0, 1).contiguous()
     return trg
 
 
@@ -139,6 +140,7 @@ def val_on_epoch(model, val_loader, opt, device):
 
 
 def load_data(opt, device):
+    print('Loading data ...', end='')
     data = pickle.load(open(opt.data_pkl, 'rb'))
     fields = data['fields']
     train = torchtext.data.Dataset(data['train'], fields)
@@ -156,8 +158,8 @@ def load_data(opt, device):
     opt.n_vocab_in = len(fields['src'].vocab)
     opt.n_vocab_out = len(fields['trg'].vocab)
 
-    print(fields['src'].vocab.stoi)
-    return train_loader, val_loader
+    print('Done!')
+    return train_loader, val_loader, fields['src'].vocab, fields['trg'].vocab
 
 def copyStateDict(state_dict):
         if list(state_dict.keys())[0].startswith("module"):
@@ -174,7 +176,8 @@ def copyStateDict(state_dict):
 def main(opt):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # device = torch.device('cpu')
-    train_loader, val_loader = load_data(opt, device)
+    
+    train_loader, val_loader, src_vocab, trg_vocab = load_data(opt, device)
 
     model = TransformerEnc(
         n_vocab_in=opt.n_vocab_in, n_vocab_out=opt.n_vocab_out,
@@ -196,7 +199,9 @@ def main(opt):
     else:
         start_epoch = 0
     
+    # train on single GPU
     # model = model.to(device)
+    # train on multiple GPUs
     model = torch.nn.DataParallel(model, device_ids=[0,1]).to(device)
 
     optimizer = optim.Adam(
@@ -205,15 +210,15 @@ def main(opt):
         betas=(0.9, 0.98),
         eps=1e-09
     )
-
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.85)
     min_loss = 100000000
     if not path.isdir(opt.save_dir):
         os.mkdir(opt.save_dir)
 
-    save_name = path.join(opt.save_dir, 'best.chkpt')
 
     for i in range(start_epoch, opt.epoch+start_epoch):
         print(f'Epoch: {i}')
+        print('learning rate:', scheduler.get_last_lr()[0])
         train_loss, train_acc_word = train_on_epoch(
             model, optimizer,
             train_loader, opt, device
@@ -222,17 +227,20 @@ def main(opt):
             model,
             val_loader, opt, device
         )
-        print(f'Epoch: {i},\n\ttrain loss: {train_loss:.4f}, val loss: {val_loss:.4f},\n\ttrain_acc: {train_acc_word:.4f}, val_acc: {val_acc_word:.4f}')
+        print(f'\ttrain loss: {train_loss:.4f}, val loss: {val_loss:.4f},\n\ttrain_acc: {train_acc_word:.4f}, val_acc: {val_acc_word:.4f}')
+        
         if val_loss <= min_loss:
             min_loss = val_loss
             checkpoint = {
-                'opt': opt, 'epoch': i, 
+                'opt': opt, 'epoch': i, 'current_lr': scheduler.get_last_lr()[0],
+                'src_vocab': src_vocab, 'trg_vocab': trg_vocab,
                 'val_loss': val_loss, 'train_loss': train_loss,
                 'model': model.state_dict()
             }
+            save_name = path.join(opt.save_dir, f'epoch_{i}.chkpt')
             torch.save(checkpoint, save_name)
             print(f'\t- [Info] The checkpoint file has been updated at epoch: {i}, with val_loss: {val_loss:.4f}')
-
+        scheduler.step()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -252,7 +260,7 @@ if __name__ == "__main__":
     parser.add_argument('-n_vocab_out', type=int, default=100)
     parser.add_argument('-max_seq_len', type=int, default=64)
     parser.add_argument('-dropout', type=float, default=0.1)
-    parser.add_argument('-n_block', type=int, default=3)
+    parser.add_argument('-n_block', type=int, default=6)
     parser.add_argument('-attn_dim', type=int, default=64)
     parser.add_argument('-n_head', type=int, default=8)
 
