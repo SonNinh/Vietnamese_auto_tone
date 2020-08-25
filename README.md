@@ -76,8 +76,8 @@ Mô hình Encoders:
 ```shell
 bash train2.sh
 ```
-Huấn luyện Encoders sau 10 epoch, độ chính xác đạt ~96%.
-Hardware: 2 GPUs 2080RTX 11GB
+Huấn luyện Encoders sau 10 epoch, độ chính xác đạt ~96%.   
+Hardware: 2 GPUs 2080RTX 11GB.   
 Thời gian huấn luyện: 180 phút
 
 # Inference
