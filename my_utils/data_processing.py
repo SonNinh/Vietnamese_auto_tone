@@ -7,6 +7,9 @@ from torchtext.data import BucketIterator
 
 from nltk import ngrams
 __author__ = 'Son Ninh'
+MAX_LEN = 61
+OUTPUT_FILE = '/mnt/data/sonninh/vietnamese_tone/pre_processed/mini_vietnamese.pkl'
+INPUT_DIR = '/mnt/data/sonninh/vietnamese_tone/pre_processed'
 
 
 s1 = u'ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúýĂăĐđĨĩŨũƠơƯưẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ'
@@ -72,14 +75,14 @@ def main():
     datasets = {'val':None, 'train':None, 'test':None}
     for key in datasets.keys():
         examples =[] 
-        root_dir = f'/mnt/data/sonninh/vietnamese_tone/pre_processed/{key}/*'
+        root_dir = f'{INPUT_DIR}/{key}/*'
         for file_pth in glob(root_dir):
             print(file_pth)
             f = open(file_pth, 'r')
             row = f.readline().strip('\n')
             
             while row:
-                if len(row) < 61: 
+                if len(row) < MAX_LEN: 
                     src_name = remove_accents(row)
                     trg_name = row
                     ex = torchtext.data.Example.fromlist([src_name, trg_name], fileds)
@@ -102,35 +105,16 @@ def main():
     print(len(SRC.vocab))
     print(len(TRG.vocab))
 
-    # batch_src = []
-    # batch_trg = []
-    # for pair in datasets['train'].examples[:4]:
-    #     batch_src.append(pair.src)
-    #     batch_trg.append(pair.trg)
-    # print(SRC.process(batch_src))
 
-    # for i, batch in enumerate(BucketIterator(datasets['val'], 4)):
-    #     print(batch.src)
-    #     print(batch.trg)
-    #     break
     data = {
         'fields': {'src': SRC, 'trg': TRG},
         'train': datasets['train'].examples,
         'valid': datasets['val'].examples,
         'test': datasets['test'].examples
     }
-    pickle.dump(data, open('/mnt/data/sonninh/vietnamese_tone/pre_processed/mini_vietnamese.pkl', 'wb'))
+    pickle.dump(data, open(OUTPUT_FILE, 'wb'))
 
-    # for ex in datasets['train'].examples:
-    #     print(ex)
-
-    # train_iter = MyDataLoader(datasets['train'], 4)
-
-    # for batch in train_iter:
-    #     print(batch.src)
-    #     print(batch.trg)
-    #     break
-
+  
 
 if __name__ == "__main__":
     main()

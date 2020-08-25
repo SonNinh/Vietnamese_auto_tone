@@ -49,8 +49,8 @@ def write_in_the_star(files, parten_split, parten_match, parten_pick):
 if __name__ == "__main__":
 
     input_path = '/mnt/data/sonninh/vietnamese_tone/output/'
-    output_path = '/mnt/data/sonninh/vietnamese_tone/pre_processed/{}.txt'
-    
+    output_path = '/mnt/data/sonninh/vietnamese_tone/pre_processed/'
+    output_path += '{}.txt'
     characters = '^[ _abcdefghijklmnopqrstuvwxyz0123456789áàảãạâấầẩẫậăắằẳẵặóòỏõọôốồổỗộơớờởỡợéèẻẽẹêếềểễệúùủũụưứừửữựíìỉĩịýỳỷỹỵđ!\"\',\-\.:;?_\(\)]+$'
 
     parten_split = re.compile(r' *[,;.:\x3F\x21\n]+ *')

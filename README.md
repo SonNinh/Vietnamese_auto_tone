@@ -17,4 +17,4 @@ Dữ liệu dùng cho quá trình huấn luyện được lấy từ Wikipedia. 
 python WikiExtractor.py \<XML wiki dump file\> -p \<number of cpu cores\> -o \<output directory\> --json
 ```
 Các file json sau khi giải nén sẽ được lưu ở *output directory*. Quá trình giải nén tốn khá nhiều thời gian, vì thế *number of cpu cores* nên bằng tổng số CPU cores.   
-Tiếp theo 
+Tiếp theo, tách nội dung trong các file json thành các câu có nghĩa, mỗi câu 1 dòng. 
