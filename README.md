@@ -8,7 +8,7 @@ Mô hình Transformer gồm 2 phần: Encoder và Decoder. Decoder có thể đ�
 # Vietnamese_auto_tone
 Để giải quyết bài toán này, mình chỉ sử dụng Encoder. Mô hình không cần Decoder do input và ouput có cùng chiều dài và cùng cấu trúc ngữ pháp.
 
-Đầu vào: 'cau vang di doi roi ong giao a'
+Đầu vào: 'cau vang di doi roi ong giao a'   
 Đầu ra mong muốn: 'cậu vàng đi đời rồi ông giáo ạ'
 
 Gỉả sử:
@@ -79,6 +79,7 @@ bash train2.sh
 Huấn luyện Encoders sau 10 epoch, độ chính xác đạt ~96%.
 Hardware: 2 GPUs 2080RTX 11GB
 Thời gian huấn luyện: 180 phút
+
 # Inference
 Mô hình Encoders
 ```shell
